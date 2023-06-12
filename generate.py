@@ -95,6 +95,7 @@ with open(EVENTS_FILE, "r") as f:
   timezone = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().tzinfo
   for event in c.events:
     if event.end < now: continue
+    if '(0.25)' in event.name: continue
     event_data = {
       "date": event.begin.astimezone(timezone).strftime("%Y-%m-%d"),
       "date_str": event.begin.astimezone(timezone).strftime("%A %-d %B"),
