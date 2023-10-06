@@ -1,10 +1,17 @@
 from PIL import Image, ImageDraw, ImageFont
 import requests, json, textwrap, os, time
 import yaml
-import pyowm
 import pytz
 import datetime
 from ics import Calendar
+
+def log( message ):
+  logfile = 'clock.log'
+  s = datetime.datetime.now().strftime('%H:%M:%S: ')
+  with open( logfile, 'a' ) as f:
+    f.write(s + message + '\n')
+
+log('clock.sh start')
 
 # Set up image parameters
 WIDTH, HEIGHT = 600, 800
@@ -36,20 +43,26 @@ draw.text(((WIDTH - time_width) / 2, 0), time_str, font=font, fill=FONT_COLOR)
 time_width, time_height = draw.textsize(time_str, font=font)
 
 # Draw date
-time_str = datetime.datetime.now().strftime("%A %-d %B %Y")
+date_str = datetime.datetime.now().strftime("%A %-d %B %Y")
 font = ImageFont.truetype(FONT_PATH, int( FONT_SIZE / 5 ) )
-date_width, date_height = draw.textsize(time_str, font=font)
-draw.text(((WIDTH - date_width) / 2, time_height + 10 ), time_str, font=font, fill=FONT_COLOR)
+date_width, date_height = draw.textsize(date_str, font=font)
+draw.text(((WIDTH - date_width) / 2, time_height + 10 ), date_str, font=font, fill=FONT_COLOR)
 line_y = time_height + date_height + 20
 
 # Get weather data
 weather_age = ( time.time() - os.path.getmtime( WEATHER_FILE ) ) / 60
-if not os.path.isfile( WEATHER_FILE ) or weather_age > 10:
+if not os.path.isfile( WEATHER_FILE ) or weather_age > 60:
+  log('Fetching weather data')
   
-  # Cache the weather
-  url = 'https://weather-broker-cdn.api.bbci.co.uk/en/forecast/aggregated/' + str(BBC_WEATHER_LOCATION_ID)
-  weather = requests.get(url).json()
-  open( WEATHER_FILE, 'w' ).write(json.dumps(weather))
+  try:
+    # Cache the weather
+    url = 'https://weather-broker-cdn.api.bbci.co.uk/en/forecast/aggregated/' + str(BBC_WEATHER_LOCATION_ID)
+    weather = requests.get(url).json()
+    open( WEATHER_FILE, 'w' ).write(json.dumps(weather))
+  except Exception as e:
+    log('FAIL: '+str(e))
+  log('Done fetching weather data')
+  pass
 else:
   weather = json.loads( open( WEATHER_FILE, 'r' ).read() )
 
@@ -196,5 +209,21 @@ for event in events:
     line_y += start_height + end_height + 20
 
 # Save image to file
+log('Save clock.png')
 image.save("clock.png")
 
+# Output the image if eips is a thing on this platform
+import subprocess
+if subprocess.run(['which','eips'], capture_output=True).stdout.decode().strip() == '/usr/sbin/eips':
+  log('eips present')
+  if time_str.endswith('00'): 
+    log('Clear screen')
+    
+    # Complete refresh once an hour
+    subprocess.run(['eips','-c'])
+    time.sleep(1)
+  
+  # Display the image
+  log('Display clock.png')
+  subprocess.run(['eips','-g','clock.png'])
+  log('Done')
