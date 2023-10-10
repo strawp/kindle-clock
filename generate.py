@@ -58,90 +58,100 @@ if not os.path.isfile( WEATHER_FILE ) or weather_age > 60:
     # Cache the weather
     url = 'https://weather-broker-cdn.api.bbci.co.uk/en/forecast/aggregated/' + str(BBC_WEATHER_LOCATION_ID)
     weather = requests.get(url).json()
-    open( WEATHER_FILE, 'w' ).write(json.dumps(weather))
+    with open( WEATHER_FILE, 'w' ) as f:
+      f.write(json.dumps(weather))
   except Exception as e:
     log('FAIL: '+str(e))
   log('Done fetching weather data')
-  pass
 else:
-  weather = json.loads( open( WEATHER_FILE, 'r' ).read() )
+  try:
+    with open( WEATHER_FILE, 'r' ) as f:
+      weather = json.loads( f.read() )
 
-# Just get the next 8 hours
-reports = []
-for report in weather['forecasts'][0]['detailed']['reports']:
-  if len( reports ) >= 8: break
-  reports.append( report )
+    # Just get the next 8 hours
+    reports = []
+    if weather and 'forecasts' in weather:
+      for report in weather['forecasts'][0]['detailed']['reports']:
+        if len( reports ) >= 8: break
+        reports.append( report )
 
-# Draw weather
-i=1
-spacing = int( WIDTH/(len(reports)+1) )
-font = ImageFont.truetype(FONT_PATH, int( FONT_SIZE / 12 ) )
-ICON_SIZE = 40
-for r in reports:
-  x = (i*spacing) 
+    # Draw weather
+    i=1
+    spacing = int( WIDTH/(len(reports)+1) )
+    font = ImageFont.truetype(FONT_PATH, int( FONT_SIZE / 12 ) )
+    ICON_SIZE = 40
+    for r in reports:
+      x = (i*spacing) 
 
-  # Weather icon
-  icon = Image.open('icons/' + str( r['weatherType'] ) + '.png').convert('L').resize((ICON_SIZE,ICON_SIZE))
-  image.paste(icon,(x-int(ICON_SIZE/2),line_y))
-  
-  # Temperature and precipitation
-  temp_and_precip = str( r['temperatureC'] ) + '° ' + str( r['precipitationProbabilityInPercent'] ) + '%'
-  width, height = draw.textsize( temp_and_precip, font=font)
-  draw.text((x-int(width/2),line_y+ICON_SIZE), temp_and_precip, font=font, fill=FONT_COLOR)
+      # Weather icon
+      icon = Image.open('icons/' + str( r['weatherType'] ) + '.png').convert('L').resize((ICON_SIZE,ICON_SIZE))
+      image.paste(icon,(x-int(ICON_SIZE/2),line_y))
+      
+      # Temperature and precipitation
+      temp_and_precip = str( r['temperatureC'] ) + '° ' + str( r['precipitationProbabilityInPercent'] ) + '%'
+      width, height = draw.textsize( temp_and_precip, font=font)
+      draw.text((x-int(width/2),line_y+ICON_SIZE), temp_and_precip, font=font, fill=FONT_COLOR)
 
-  # Time slot
-  width, height = draw.textsize( r['timeslot'], font=font)
-  draw.text((x-int(width/2),line_y+ICON_SIZE+height), r['timeslot'], font=font, fill=FONT_COLOR)
-  i+=1
-  # print( report )
-  # print(report['timeslot'],report['weatherType'],report['temperatureC'],report['precipitationProbabilityInPercent'])
-line_y += 90
+      # Time slot
+      width, height = draw.textsize( r['timeslot'], font=font)
+      draw.text((x-int(width/2),line_y+ICON_SIZE+height), r['timeslot'], font=font, fill=FONT_COLOR)
+      i+=1
+      # print( report )
+      # print(report['timeslot'],report['weatherType'],report['temperatureC'],report['precipitationProbabilityInPercent'])
+    line_y += 90
+
+  except Exception as e:
+    log('FAIL: ' + str(e))
 
 # Load event data from vCalendar file
-with open(EVENTS_FILE, "r") as f:
-  c = Calendar(f.read())
-  events = []
-  running = []
-  imminent = []
-  comingup = []
-  now = datetime.datetime.utcnow().replace(tzinfo=pytz.utc)
-  timezone = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().tzinfo
-  for event in c.events:
-    if event.end < now: continue
-    if '(0.25)' in event.name: continue
-    event_data = {
-      "date": event.begin.astimezone(timezone).strftime("%Y-%m-%d"),
-      "date_str": event.begin.astimezone(timezone).strftime("%A %-d %B"),
-      "day": event.begin.astimezone(timezone).strftime("%A"),
-      "start": event.begin.astimezone(timezone).strftime("%H:%M"),
-      "end": event.end.astimezone(timezone).strftime("%H:%M"),
-      "name": event.name,
-      "start_timestamp": event.begin.timestamp(),
-      "end_timestamp": event.end.timestamp(),
-      "duration": int( ( event.end.astimezone(timezone) - event.begin.astimezone(timezone) ).seconds / 60 )
-    }
+try:
+  with open(EVENTS_FILE, "r") as f:
+    c = Calendar(f.read())
+    events = []
+    running = []
+    imminent = []
+    comingup = []
+    now = datetime.datetime.utcnow().replace(tzinfo=pytz.utc)
+    timezone = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().tzinfo
+    for event in c.events:
+      if event.end < now: continue
+      if '(0.25)' in event.name: continue
+      event_data = {
+        "date": event.begin.astimezone(timezone).strftime("%Y-%m-%d"),
+        "date_str": event.begin.astimezone(timezone).strftime("%A %-d %B"),
+        "day": event.begin.astimezone(timezone).strftime("%A"),
+        "start": event.begin.astimezone(timezone).strftime("%H:%M"),
+        "end": event.end.astimezone(timezone).strftime("%H:%M"),
+        "name": event.name,
+        "start_timestamp": event.begin.timestamp(),
+        "end_timestamp": event.end.timestamp(),
+        "duration": int( ( event.end.astimezone(timezone) - event.begin.astimezone(timezone) ).seconds / 60 )
+      }
 
-    # If it's longer than 2 hours it's probably some kind of all day event
-    if event_data['duration'] > 120 or event_data['duration'] == 0: continue
-   
-    events.append(event_data)
-    
-    # Currently running event?
-    if event.end.timestamp() > datetime.datetime.timestamp( now ) and event.begin.timestamp() <= datetime.datetime.timestamp( now ):
-      running.append(event_data)
-      continue
+      # If it's longer than 2 hours it's probably some kind of all day event
+      if event_data['duration'] > 120 or event_data['duration'] == 0: continue
+     
+      events.append(event_data)
+      
+      # Currently running event?
+      if event.end.timestamp() > datetime.datetime.timestamp( now ) and event.begin.timestamp() <= datetime.datetime.timestamp( now ):
+        running.append(event_data)
+        continue
 
-    # Starting imminently
-    if ( ( event.begin.timestamp() - datetime.datetime.timestamp( now ) ) / 60 ) < 6:
-      imminent.append( event_data )
-      continue
+      # Starting imminently
+      if ( ( event.begin.timestamp() - datetime.datetime.timestamp( now ) ) / 60 ) < 6:
+        imminent.append( event_data )
+        continue
 
-    # Coming up
-    if ( ( event.begin.timestamp() - datetime.datetime.timestamp( now ) ) / 60 ) < 60:
-      comingup.append( event_data )
+      # Coming up
+      if ( ( event.begin.timestamp() - datetime.datetime.timestamp( now ) ) / 60 ) < 60:
+        comingup.append( event_data )
 
-# Order by date
-events = sorted(events, key=lambda x: x['date'] + x['start'])
+  # Order by date
+  events = sorted(events, key=lambda x: x['date'] + x['start'])
+except Exception e:
+  log('FAIL reading from events: ' + str(e))
+
 
 # print(json.dumps(events,indent=2))
 
