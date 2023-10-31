@@ -58,14 +58,19 @@ date_str = datetime.datetime.now().strftime("%A %-d %B %Y")
 if landscape: 
   font = ImageFont.truetype(FONT_PATH, int( FONT_SIZE / 8 ) )
   date_width, date_height = draw.textsize(date_str, font=font)
-  draw.text(( margin, time_height + 10 ), date_str, font=font, fill=FONT_COLOR)
+  draw.text(( margin + (time_width/2) - (date_width/2), time_height + 10 ), date_str, font=font, fill=FONT_COLOR)
 else: 
   font = ImageFont.truetype(FONT_PATH, int( FONT_SIZE / 5 ) )
   date_width, date_height = draw.textsize(date_str, font=font)
   draw.text(((WIDTH - date_width) / 2, time_height + 10 ), date_str, font=font, fill=FONT_COLOR)
-line_y = time_height + date_height + 20
+
+if landscape: line_y = time_height + date_height
+else: line_y = time_height + date_height + 20
 
 # Get weather data
+if landscape: max_weather = 12
+else: max_weather = 8
+
 weather_age = ( time.time() - os.path.getmtime( WEATHER_FILE ) ) / 60
 if not os.path.isfile( WEATHER_FILE ) or weather_age > 60:
   log('Fetching weather data')
@@ -88,7 +93,7 @@ else:
     reports = []
     if weather and 'forecasts' in weather:
       for report in weather['forecasts'][0]['detailed']['reports']:
-        if len( reports ) >= 8: break
+        if len( reports ) >= max_weather: break
         reports.append( report )
 
     # Draw weather
@@ -109,15 +114,6 @@ else:
       icon = Image.open('icons/' + str( r['weatherType'] ) + '.png').convert('L').resize((ICON_SIZE,ICON_SIZE))
       image.paste(icon,(x-int(ICON_SIZE/2),y))
       if landscape: x+=ICON_SIZE
-      
-      # Temperature and precipitation
-      temp_and_precip = str( r['temperatureC'] ) + '° ' + str( r['precipitationProbabilityInPercent'] ) + '%'
-      width, height = draw.textsize( temp_and_precip, font=font)
-      if landscape: 
-        draw.text((x,y), temp_and_precip, font=font, fill=FONT_COLOR)
-        x+=70
-      else:
-        draw.text((x-int(width/2),y+ICON_SIZE), temp_and_precip, font=font, fill=FONT_COLOR)
 
       # Time slot
       width, height = draw.textsize( r['timeslot'], font=font)
@@ -125,6 +121,15 @@ else:
         draw.text((x,y), r['timeslot'], font=font, fill=FONT_COLOR)
       else:
         draw.text((x-int(width/2),line_y+ICON_SIZE+height), r['timeslot'], font=font, fill=FONT_COLOR)
+      
+      # Temperature and precipitation
+      temp_and_precip = str( r['temperatureC'] ) + '° ' + str( r['precipitationProbabilityInPercent'] ) + '%'
+      width, height = draw.textsize( temp_and_precip, font=font)
+      if landscape: 
+        x+=50
+        draw.text((x,y), temp_and_precip, font=font, fill=FONT_COLOR)
+      else:
+        draw.text((x-int(width/2),y+ICON_SIZE), temp_and_precip, font=font, fill=FONT_COLOR)
       i+=1
       # print( report )
       # print(report['timeslot'],report['weatherType'],report['temperatureC'],report['precipitationProbabilityInPercent'])
@@ -139,6 +144,8 @@ else:
 if landscape: 
   line_y = 0
   line_x = int(WIDTH/2.5)
+else:
+  line_x = margin
 
 # Load event data from vCalendar file
 try:
