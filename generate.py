@@ -260,20 +260,27 @@ for event in events:
 
 # Save image to file
 log('Save clock.png')
-image.save("clock.png")
 
 # Output the image if eips is a thing on this platform
 import subprocess
 if subprocess.run(['which','eips'], capture_output=True).stdout.decode().strip() == '/usr/sbin/eips':
   log('eips present')
+ 
+  if landscape:
+    log('Rotate image')
+    image = image.transpose(Image.ROTATE_270)
+  image.save("clock.png")
+  cmd = ['eips']
   if time_str.endswith('00'): 
-    log('Clear screen')
+    log('Full draw')
     
     # Complete refresh once an hour
-    subprocess.run(['eips','-c'])
-    time.sleep(1)
+    cmd.append('-f')
   
   # Display the image
   log('Display clock.png')
-  subprocess.run(['eips','-g','clock.png'])
-  log('Done')
+  cmd.extend(['-g','clock.png'])
+  subprocess.run(cmd)
+else:
+  image.save("clock.png")
+log('Done')
