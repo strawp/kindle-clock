@@ -200,14 +200,17 @@ except Exception as e:
 # print(json.dumps(events,indent=2))
 
 def draw_block( title, titlesize, items ):
-  global line_x, line_y, margin
+  global line_x, line_y, margin, landscape
   if len( items ) == 0: return
   items = sorted(items, key=lambda x: x['date'] + x['start'])
+
+  if landscape: titlesize = int(titlesize * 0.9)
 
   # Title
   font = ImageFont.truetype(FONT_PATH, titlesize)  
   title_width, title_height = draw.textsize( title, font=font)
   draw.text((line_x, line_y), title, font=font, fill=FONT_COLOR)
+  if not landscape: line_y += title_height
 
   # Number of mins til start
   font = ImageFont.truetype(FONT_PATH, int( FONT_SIZE/6 ))
@@ -218,7 +221,12 @@ def draw_block( title, titlesize, items ):
   else:
     subtitle = str(-1*starting) + ' mins ago'
   subtitle_width, subtitle_height = draw.textsize( title, font=font)
-  draw.text((line_x, title_height + line_y), subtitle, font=font, fill=FONT_COLOR)
+  if landscape:
+    draw.text((line_x+title_width+10, line_y+margin), subtitle, font=font, fill=FONT_COLOR)
+    line_y += title_height
+  else: 
+    draw.text((line_x, line_y+margin), subtitle, font=font, fill=FONT_COLOR)
+    line_y += subtitle_height
     
   # List events
   txt = []
@@ -227,8 +235,12 @@ def draw_block( title, titlesize, items ):
   txt = '\n'.join(txt)
   font = ImageFont.truetype(FONT_PATH, int(FONT_SIZE/6))  
   width, height = draw.textsize( txt, font=font)
-  draw.text((int(WIDTH*0.35) + 10, line_y), txt, font=font, fill=FONT_COLOR)
-  line_y += max( title_height + subtitle_height, height ) + 30
+  if landscape: 
+    draw.text((line_x, line_y), txt, font=font, fill=FONT_COLOR)
+    line_y += height
+  else: 
+    draw.text((line_x+title_width, margin+line_y-title_height-subtitle_height), txt, font=font, fill=FONT_COLOR)
+  line_y+=30
   
 draw_block( 'NOW:', int( FONT_SIZE/2 ), running )
 draw_block( 'Imminent:', int( FONT_SIZE/4 ), imminent )
