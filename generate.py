@@ -210,7 +210,7 @@ def draw_block( title, titlesize, items ):
   font = ImageFont.truetype(FONT_PATH, titlesize)  
   title_width, title_height = draw.textsize( title, font=font)
   draw.text((line_x, line_y), title, font=font, fill=FONT_COLOR)
-  if not landscape: line_y += title_height
+  line_y += title_height
 
   # Number of mins til start
   font = ImageFont.truetype(FONT_PATH, int( FONT_SIZE/6 ))
@@ -221,12 +221,8 @@ def draw_block( title, titlesize, items ):
   else:
     subtitle = str(-1*starting) + ' mins ago'
   subtitle_width, subtitle_height = draw.textsize( title, font=font)
-  if landscape:
-    draw.text((line_x+title_width+10, line_y+margin), subtitle, font=font, fill=FONT_COLOR)
-    line_y += title_height
-  else: 
-    draw.text((line_x, line_y+margin), subtitle, font=font, fill=FONT_COLOR)
-    line_y += subtitle_height
+  draw.text((line_x, line_y), subtitle, font=font, fill=FONT_COLOR)
+  line_y += subtitle_height
     
   # List events
   txt = []
