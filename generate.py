@@ -33,6 +33,24 @@ WEATHER_FILE = 'weather.json'
 margin = 20
 BBC_WEATHER_LOCATION_ID = 2643743
 
+calendarurlfile = 'calendarurl.txt'
+if os.path.isfile( calendarurlfile ):
+  CALENDAR_URL = open( calendarurlfile, 'r' ).read().strip()
+else:
+  CALENDAR_URL = None
+
+if CALENDAR_URL:
+  events_age = ( time.time() - os.path.getmtime( EVENTS_FILE ) ) / 60
+  if not os.path.isfile( EVENTS_FILE ) or events_age > 60:
+    log('Fetching events')
+    try:
+      events = requests.get(CALENDAR_URL).text
+      if len( events.strip() ) > 0:
+        with open( EVENTS_FILE, 'w' ) as f:
+          f.write(events)
+    except Exception as e:
+      log('FAIL: '+str(e))
+
 locationidfile = 'weatherlocation.txt'
 if os.path.isfile( locationidfile ):
   BBC_WEATHER_LOCATION_ID = int(open( locationidfile, 'r' ).read())
@@ -148,13 +166,13 @@ else:
   line_x = margin
 
 # Load event data from vCalendar file
+events = []
+running = []
+imminent = []
+comingup = []
 try:
   with open(EVENTS_FILE, "r") as f:
     c = Calendar(f.read())
-    events = []
-    running = []
-    imminent = []
-    comingup = []
     now = datetime.datetime.utcnow().replace(tzinfo=pytz.utc)
     timezone = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().tzinfo
     for event in c.events:
