@@ -1,25 +1,34 @@
 from PIL import Image, ImageDraw, ImageFont
 import requests, json, textwrap, os, time, sys
 import yaml
-import pytz
 import datetime
-from ics import Calendar
+from ics import Calendar, Event
 
 def log( message ):
   logfile = 'clock.log'
   s = datetime.datetime.now().strftime('%H:%M:%S: ')
   
-  print( message )
+  print( s, message )
   return # We don't need to write to file currently
   with open( logfile, 'a' ) as f:
     f.write(s + message + '\n')
 
+def get_trimmed_calendar( calendar ):
+  trimmedcal = Calendar()
+  timezone = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().tzinfo
+  now = datetime.datetime.now().astimezone(timezone)
+  twoweeks = now + datetime.timedelta(days=14)
+  for event in calendar.events:
+    if event.end.astimezone(timezone) < now: continue
+    if event.begin.astimezone(timezone) > twoweeks: continue
+    if '(0.25)' in event.summary: continue
+    if len( trimmedcal.events ) > 19: break
+    trimmedcal.events.append( event )
+  return trimmedcal
+
+
 log('clock.sh start')
 landscape = len( sys.argv ) > 1
-
-# Set up image parameters
-if landscape: WIDTH, HEIGHT = 800, 600
-else: WIDTH, HEIGHT = 600, 800
 
 BG_COLOR = (255, 255, 255)
 
@@ -29,9 +38,15 @@ FONT_COLOR = 0
 FONT_PATH = "Roboto-Regular.ttf"
 
 EVENTS_FILE = 'calendar.ics'
+SHORT_EVENTS_FILE = 'calendar_short.ics'
 WEATHER_FILE = 'weather.json'
 margin = 20
 BBC_WEATHER_LOCATION_ID = 2643743
+
+# Set up image parameters
+if landscape: WIDTH, HEIGHT = 800, 600
+else: WIDTH, HEIGHT = 600, 800
+
 
 calendarurlfile = 'calendarurl.txt'
 if os.path.isfile( calendarurlfile ):
@@ -40,16 +55,23 @@ else:
   CALENDAR_URL = None
 
 if CALENDAR_URL:
-  events_age = ( time.time() - os.path.getmtime( EVENTS_FILE ) ) / 60
-  if not os.path.isfile( EVENTS_FILE ) or events_age > 60:
+  if not os.path.isfile( SHORT_EVENTS_FILE ) or not os.path.isfile( EVENTS_FILE ) or ( ( time.time() - os.path.getmtime( EVENTS_FILE ) ) / 60 ) > 60:
     log('Fetching events')
     try:
       events = requests.get(CALENDAR_URL).text
       if len( events.strip() ) > 0:
         with open( EVENTS_FILE, 'w' ) as f:
           f.write(events)
+        log('Loading calendar file')
+        with open(EVENTS_FILE, "r") as f:
+          calendar = Calendar(f.read())
+        with open( SHORT_EVENTS_FILE, 'w' ) as f:
+          f.write( get_trimmed_calendar( calendar ).serialize() )
     except Exception as e:
       log('FAIL: '+str(e))
+        
+with open(SHORT_EVENTS_FILE, "r") as f:
+  calendar = Calendar(f.read())
 
 locationidfile = 'weatherlocation.txt'
 if os.path.isfile( locationidfile ):
@@ -60,26 +82,27 @@ image = Image.new("L", (WIDTH, HEIGHT), color="white")
 draw = ImageDraw.Draw(image)
 
 # Draw time
+log('Drawing time')
 time_str = datetime.datetime.now().strftime("%H:%M")
 if landscape: 
   font = ImageFont.truetype(FONT_PATH, int(FONT_SIZE/1.5))
-  time_width, time_height = draw.textsize(time_str, font=font)
+  time_width, time_height = ( draw.textlength( time_str, font=font ), font.size )
   draw.text(( margin, 0), time_str, font=font, fill=FONT_COLOR)
 else: 
   font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
-  time_width, time_height = draw.textsize(time_str, font=font)
+  time_width, time_height = ( draw.textlength( time_str, font=font ), font.size )
   draw.text(((WIDTH - time_width) / 2, 0), time_str, font=font, fill=FONT_COLOR)
-time_width, time_height = draw.textsize(time_str, font=font)
 
 # Draw date
+log( 'Drawing date' )
 date_str = datetime.datetime.now().strftime("%A %-d %B %Y")
 if landscape: 
   font = ImageFont.truetype(FONT_PATH, int( FONT_SIZE / 8 ) )
-  date_width, date_height = draw.textsize(date_str, font=font)
+  date_width, date_height = ( draw.textlength( date_str, font=font ), font.size )
   draw.text(( margin + (time_width/2) - (date_width/2), time_height + 10 ), date_str, font=font, fill=FONT_COLOR)
 else: 
   font = ImageFont.truetype(FONT_PATH, int( FONT_SIZE / 5 ) )
-  date_width, date_height = draw.textsize(date_str, font=font)
+  date_width, date_height = ( draw.textlength( date_str, font=font ), font.size )
   draw.text(((WIDTH - date_width) / 2, time_height + 10 ), date_str, font=font, fill=FONT_COLOR)
 
 if landscape: line_y = time_height + date_height
@@ -90,7 +113,7 @@ if landscape: max_weather = 12
 else: max_weather = 8
 
 weather_age = ( time.time() - os.path.getmtime( WEATHER_FILE ) ) / 60
-if not os.path.isfile( WEATHER_FILE ) or weather_age > 60:
+if not os.path.isfile( WEATHER_FILE ) or weather_age > 120:
   log('Fetching weather data')
   
   try:
@@ -104,6 +127,7 @@ if not os.path.isfile( WEATHER_FILE ) or weather_age > 60:
   log('Done fetching weather data')
 else:
   try:
+    log('Loading JSON weather data' )
     with open( WEATHER_FILE, 'r' ) as f:
       weather = json.loads( f.read() )
 
@@ -115,6 +139,7 @@ else:
         reports.append( report )
 
     # Draw weather
+    log('Drawing weather')
     i=1
     if landscape: spacing = int( (HEIGHT-line_y)/(len(reports)+1) )
     else: spacing = int( WIDTH/(len(reports)+1) )
@@ -134,7 +159,7 @@ else:
       if landscape: x+=ICON_SIZE
 
       # Time slot
-      width, height = draw.textsize( r['timeslot'], font=font)
+      width, height = ( draw.textlength( r['timeslot'], font=font ), font.size )
       if landscape:
         draw.text((x,y), r['timeslot'], font=font, fill=FONT_COLOR)
       else:
@@ -142,7 +167,7 @@ else:
       
       # Temperature and precipitation
       temp_and_precip = str( r['temperatureC'] ) + '° ' + str( r['precipitationProbabilityInPercent'] ) + '%'
-      width, height = draw.textsize( temp_and_precip, font=font)
+      width, height = ( draw.textlength( temp_and_precip, font=font ), font.size )
       if landscape: 
         x+=50
         draw.text((x,y), temp_and_precip, font=font, fill=FONT_COLOR)
@@ -170,49 +195,51 @@ events = []
 running = []
 imminent = []
 comingup = []
-try:
-  with open(EVENTS_FILE, "r") as f:
-    c = Calendar(f.read())
-    now = datetime.datetime.utcnow().replace(tzinfo=pytz.utc)
-    timezone = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().tzinfo
-    for event in c.events:
-      if event.end < now: continue
-      if '(0.25)' in event.name: continue
-      event_data = {
-        "date": event.begin.astimezone(timezone).strftime("%Y-%m-%d"),
-        "date_str": event.begin.astimezone(timezone).strftime("%A %-d %B"),
-        "day": event.begin.astimezone(timezone).strftime("%A"),
-        "start": event.begin.astimezone(timezone).strftime("%H:%M"),
-        "end": event.end.astimezone(timezone).strftime("%H:%M"),
-        "name": event.name,
-        "start_timestamp": event.begin.timestamp(),
-        "end_timestamp": event.end.timestamp(),
-        "duration": int( ( event.end.astimezone(timezone) - event.begin.astimezone(timezone) ).seconds / 60 )
-      }
 
-      # If it's longer than 2 hours it's probably some kind of all day event
-      if event_data['duration'] > 120 or event_data['duration'] == 0: continue
-     
-      events.append(event_data)
-      
-      # Currently running event?
-      if event.end.timestamp() > datetime.datetime.timestamp( now ) and event.begin.timestamp() <= datetime.datetime.timestamp( now ):
-        running.append(event_data)
-        continue
+timezone = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().tzinfo
+now = datetime.datetime.now().astimezone(timezone)
+nowts = datetime.datetime.timestamp( now )
+  
+# print( now )
+for event in calendar.events:
+  if event.end.astimezone(timezone) < now: continue
+  if '(0.25)' in event.summary: continue
 
-      # Starting imminently
-      if ( ( event.begin.timestamp() - datetime.datetime.timestamp( now ) ) / 60 ) < 6:
-        imminent.append( event_data )
-        continue
+  # Events are converted into the current timezone, assuming ice>=0.8.0.dev0
+  event_data = {
+    "date": event.begin.astimezone(timezone).strftime("%Y-%m-%d"),
+    "date_str": event.begin.astimezone(timezone).strftime("%A %-d %B"),
+    "day": event.begin.astimezone(timezone).strftime("%A"),
+    "start": event.begin.astimezone(timezone).strftime("%H:%M"),
+    "end": event.end.astimezone(timezone).strftime("%H:%M"),
+    "name": event.summary,
+    "start_timestamp": event.begin.astimezone(timezone).timestamp(),
+    "end_timestamp": event.end.astimezone(timezone).timestamp(),
+    "duration": int( ( event.end - event.begin ).seconds / 60 )
+  }
 
-      # Coming up
-      if ( ( event.begin.timestamp() - datetime.datetime.timestamp( now ) ) / 60 ) < 60:
-        comingup.append( event_data )
+  # If it's longer than 2 hours it's probably some kind of all day event
+  if event_data['duration'] > 120 or event_data['duration'] == 0: continue
+ 
+  log('Appending: ' + event_data['name'])
+  events.append(event_data)
+  
+  # Currently running event?
+  if event_data['end_timestamp'] > nowts and event_data['start_timestamp'] <= nowts:
+    running.append(event_data)
+    continue
 
-  # Order by date
-  events = sorted(events, key=lambda x: x['date'] + x['start'])
-except Exception as e:
-  log('FAIL reading from events: ' + str(e))
+  # Starting imminently
+  if ( ( event_data['start_timestamp'] - nowts ) / 60 ) < 6:
+    imminent.append( event_data )
+    continue
+
+  # Coming up
+  if ( ( event_data['start_timestamp'] - nowts ) / 60 ) < 60:
+    comingup.append( event_data )
+
+# Order by date
+events = sorted(events, key=lambda x: x['date'] + x['start'])
 
 
 # print(json.dumps(events,indent=2))
@@ -220,13 +247,14 @@ except Exception as e:
 def draw_block( title, titlesize, items ):
   global line_x, line_y, margin, landscape
   if len( items ) == 0: return
+  log('Drawing block: ' + title)
   items = sorted(items, key=lambda x: x['date'] + x['start'])
 
   if landscape: titlesize = int(titlesize * 0.9)
 
   # Title
   font = ImageFont.truetype(FONT_PATH, titlesize)  
-  title_width, title_height = draw.textsize( title, font=font)
+  title_width, title_height = ( draw.textlength( title, font=font ), font.size )
   draw.text((line_x, line_y), title, font=font, fill=FONT_COLOR)
   line_y += title_height
 
@@ -238,7 +266,7 @@ def draw_block( title, titlesize, items ):
     subtitle = 'in ' + str( starting ) + ' mins'
   else:
     subtitle = str(-1*starting) + ' mins ago'
-  subtitle_width, subtitle_height = draw.textsize( title, font=font)
+  subtitle_width, subtitle_height = ( draw.textlength( subtitle, font=font ), font.size )
   draw.text((line_x, line_y), subtitle, font=font, fill=FONT_COLOR)
   line_y += subtitle_height
     
@@ -248,7 +276,9 @@ def draw_block( title, titlesize, items ):
     txt.append( '\n'.join( textwrap.wrap( event["name"], width=30 ) ) )
   txt = '\n'.join(txt)
   font = ImageFont.truetype(FONT_PATH, int(FONT_SIZE/6))  
-  width, height = draw.textsize( txt, font=font)
+  l,t,r,b = font.getbbox( txt )
+  width = r - l
+  height = b - t
   if landscape: 
     draw.text((line_x, line_y), txt, font=font, fill=FONT_COLOR)
     line_y += height
@@ -270,10 +300,12 @@ day = None
 if landscape: wrapwidth=40
 else: wrapwidth=50
 
+log( 'Drawing events' )
+
 for event in events:
 
     if day != event['date']:
-      date_width, date_height = draw.textsize( event['date_str'], font=date_font)
+      date_width, date_height = ( draw.textlength( event['date_str'], font=font ), font.size )
       draw.text( ( line_x, line_y), event['date_str'], font=date_font)
       line_y += date_height
       day = event['date']
@@ -281,11 +313,14 @@ for event in events:
     start_text = f'{event["start"]}'
     end_text = f'{event["end"]} ({event["duration"]})'
     event_text = '\n'.join( textwrap.wrap( event["name"], width=wrapwidth ) )
-    start_width, start_height = draw.textsize( start_text, font=start_font)
-    end_width, end_height = draw.textsize( end_text, font=end_font)
-    event_width, event_height = draw.textsize( event_text, font=event_font)
+    start_width, start_height = ( draw.textlength( start_text, font=start_font ), start_font.size )
+    end_width, end_height = ( draw.textlength( end_text, font=end_font ), end_font.size )
+    l,t,r,b = event_font.getbbox( event_text )
+    event_width = r - l
+    event_height = b - t
     if line_y + event_height > HEIGHT:
         break
+    log('Event text: ' + event_text)
     draw.text((line_x, line_y), start_text, font=start_font, fill=FONT_COLOR)
     draw.text((line_x, line_y+start_height), end_text, font=end_font, fill=FONT_COLOR)
     draw.text((line_x+start_width+10, line_y + 10), event_text, font=event_font, fill=FONT_COLOR)
